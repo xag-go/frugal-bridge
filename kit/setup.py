@@ -420,6 +420,32 @@ def global_targets():
     }
 
 
+GLOBAL_NOTE_BASE = """
+## Where your files are (installed for every project)
+These rules apply in every folder. A knowledge base owns the user's files: `{base}`. Its `.kits.json` slots say
+where the user file and the "now" file are (user = `{user}`, now = `{now}`); use them instead of USER.md /
+PROGRESS.md and never create a second copy. Project files (`PROGRESS.md`, `PROJECT.md`, `DECISIONS.md`) still live in
+the current project folder, created only when needed. If the project has its own `.kits.json`, its slots win.
+"""
+
+BASE_PATH_RE = re.compile(r"<!-- base-folder:start[^>]*-->.*?^Path: *(\S+)", re.S | re.M)
+
+
+def find_base(files):
+    """A knowledge base connected at user level writes 'Path: <dir>' in its block; it owns the slots."""
+    for f in files:
+        m = BASE_PATH_RE.search(read(f) or "")
+        if m:
+            d = os.path.expanduser(m.group(1))
+            k = read(os.path.join(d, ".kits.json"))
+            try:
+                if k and "base-folder" in json.loads(k).get("kits", {}):
+                    return d
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
 GLOBAL_NOTE = """
 ## Where your files are (installed for every project)
 These rules apply in every folder. The user file is `{user}`: read it at session start together with the
@@ -458,13 +484,23 @@ class GlobalSetup(Setup):
         os.makedirs(self.d, exist_ok=True)
         r = self.reg()
         tools = r.setdefault("tools", {})
-        user = os.path.join(self.d, "USER.md")
-        if not os.path.exists(user):
-            write(user, open(os.path.join(KIT, "templates", "USER.md")).read()); self.log.append(f"created {user}")
-        body = (open(os.path.join(KIT, "AGENTS.md")).read() + "\n\n" + open(os.path.join(KIT, "ROUTING.md")).read()
-                + "\n" + GLOBAL_NOTE.format(user=user))
         targets = global_targets()
         hosts = [h for h in (hosts or self.detect()) if h in targets]
+        user = os.path.join(self.d, "USER.md")
+        base = find_base([os.path.join(targets[t][0], targets[t][1]) for t in targets])
+        rules = open(os.path.join(KIT, "AGENTS.md")).read() + "\n\n" + open(os.path.join(KIT, "ROUTING.md")).read() + "\n"
+        if base:  # coexistence contract: the base owns the slots, Frugal never makes a second copy
+            sl = json.loads(read(os.path.join(base, ".kits.json"))).get("slots") or {}
+            u, n = os.path.join(base, sl.get("user", "USER.md")), os.path.join(base, sl.get("now", "PROGRESS.md"))
+            body = rules + GLOBAL_NOTE_BASE.format(base=base, user=u, now=n)
+            r["base"] = base
+            if os.path.exists(user):
+                self.log.append(f"note: {user} exists from before the knowledge base — move what it says into {u}, then delete it")
+        else:
+            r.pop("base", None)
+            if not os.path.exists(user):
+                write(user, open(os.path.join(KIT, "templates", "USER.md")).read()); self.log.append(f"created {user}")
+            body = rules + GLOBAL_NOTE.format(user=user)
         for t in hosts:
             home, fname, _ = targets[t]
             f = os.path.join(home, fname)
@@ -562,7 +598,13 @@ class GlobalSetup(Setup):
             out.append(f"{t}: {info['file']} block={n} size={b}"); ok &= n == 1
             if b > CODEX_LIMIT:
                 out.append(f"  {info['file']} over 32 KiB: some tools read only the first 32 KiB"); ok = False
-        if not os.path.exists(os.path.join(self.d, "USER.md")):
+        base = self.reg().get("base")
+        if base:
+            if not os.path.isdir(base):
+                out.append(f"knowledge base {base} is gone: re-run install --global"); ok = False
+            else:
+                out.append(f"user files: owned by the knowledge base {base}")
+        elif not os.path.exists(os.path.join(self.d, "USER.md")):
             out.append("USER.md missing"); ok = False
         out.insert(0, "OK" if ok else "PROBLEMS")
         return "\n".join(out)
@@ -586,7 +628,10 @@ def main_global(argv):
         proxy = [b for b in PROXY_TOOLS if shutil.which(b)]
         if proxy:
             print(f"  proxy available for: {', '.join(proxy)} — optional, adds enforcement (adapter/proxy/)")
-        print(f"  user file: {os.path.join(g.d, 'USER.md')} — fill it (name of the main agent, language, style)")
+        if g.reg().get("base"):
+            print(f"  user files: the knowledge base {g.reg()['base']} owns them (no second copy made)")
+        else:
+            print(f"  user file: {os.path.join(g.d, 'USER.md')} — fill it (name of the main agent, language, style)")
         return 0 if rep.startswith("OK") else 1
     if argv[1] == "uninstall":
         print("\n".join(g.uninstall())); return 0

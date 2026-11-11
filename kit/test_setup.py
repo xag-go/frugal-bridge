@@ -237,3 +237,49 @@ def test_global_user_file_found_by_adapter(tmp_path, monkeypatch):
     (proj / "PROGRESS.md").write_text("x")
     got = frugal_hook.slots(str(proj))
     assert got["now"].endswith("PROGRESS.md") and got["user"] == str(home / ".frugal-bridge" / "USER.md")
+
+
+def _base(tmp_path):
+    b = tmp_path / "mybase"
+    (b / "wiki" / "me").mkdir(parents=True)
+    (b / "hot.md").write_text("now")
+    (b / ".kits.json").write_text(json.dumps({"kits": {"base-folder": {"version": "1"}},
+                                              "slots": {"user": "wiki/me/", "now": "hot.md"}}))
+    block = f"<!-- base-folder:start v2 -->\n## Knowledge base\nPath: {b}\n- read hot.md\n<!-- base-folder:end -->\n"
+    return b, block
+
+
+def test_global_base_first_no_second_copy(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    b, block = _base(tmp_path)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text("mine\n" + block)
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    t = (home / ".claude" / "CLAUDE.md").read_text()
+    assert t.index("base-folder:end") < t.index("frugal-bridge:start")      # after the base block
+    assert f"{b}/wiki/me/" in t and "never create a second copy" in t
+    assert not (home / ".frugal-bridge" / "USER.md").exists()
+    import sys; sys.path.insert(0, os.path.join(S.ROOT, "adapter", "hooks"))
+    import importlib, frugal_hook; importlib.reload(frugal_hook)
+    p = tmp_path / "proj"; p.mkdir()
+    got = frugal_hook.slots(str(p))
+    assert got == {"now": str(b / "hot.md"), "user": str(b / "wiki" / "me") + "/"} or got == {"now": str(b / "hot.md"), "user": str(b / "wiki/me/")}
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    assert (home / ".claude" / "CLAUDE.md").read_text() == "mine\n" + block
+
+
+def test_global_frugal_first_then_base(tmp_path, monkeypatch, capsys):
+    home = _fake_home(tmp_path, monkeypatch)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text("mine\n")
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    assert (home / ".frugal-bridge" / "USER.md").exists()
+    b, block = _base(tmp_path)
+    t = (home / ".claude" / "CLAUDE.md").read_text()
+    (home / ".claude" / "CLAUDE.md").write_text(t + block)                   # the base connects later
+    capsys.readouterr()
+    assert S.main(["setup.py", "install", "--global"]) == 0                  # re-run switches to the base
+    out = capsys.readouterr().out
+    assert "move what it says into" in out and "owned by the knowledge base" in out
+    t = (home / ".claude" / "CLAUDE.md").read_text()
+    assert t.count("frugal-bridge:start") == 1 and f"{b}/hot.md" in t

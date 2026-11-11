@@ -114,10 +114,20 @@ def slots(project_dir):
         f = os.path.join(root, s[x])
         if os.path.isfile(f):
             out[x] = f
-    if "user" not in out:  # user-level install (setup.py --global): one USER.md for every project
-        g = os.path.join(os.environ.get("FRUGAL_HOME") or os.path.expanduser("~/.frugal-bridge"), "USER.md")
-        if os.path.isfile(g):
-            out["user"] = g
+    if "user" not in out:  # user-level install (setup.py --global): the knowledge base's slots, else one USER.md
+        fh = os.environ.get("FRUGAL_HOME") or os.path.expanduser("~/.frugal-bridge")
+        try:
+            base = json.load(open(os.path.join(fh, "global.json"))).get("base")
+            bs = json.load(open(os.path.join(base, ".kits.json"))).get("slots") or {} if base else {}
+        except Exception:
+            base, bs = None, {}
+        if base:
+            for x in ("now", "user"):
+                f = os.path.join(base, bs.get(x, ""))
+                if x not in out and bs.get(x) and os.path.exists(f):
+                    out[x] = f
+        elif os.path.isfile(os.path.join(fh, "USER.md")):
+            out["user"] = os.path.join(fh, "USER.md")
     return out
 
 

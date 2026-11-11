@@ -797,3 +797,12 @@ Readings:
   USER.md filled (Nora, French, short), plugin not enabled, project folder untouched, 7 turns $0.10. Then a **new
   session in another, empty folder** (Haiku): "Je m'appelle Nora, et je réponds en français, de façon courte." The
   real home was not touched.
+
+### 2.28 Global install + knowledge base, any order (2026-11-11)
+- Gap found before the first live install: `--global` made `~/.frugal-bridge/USER.md` even when a knowledge base was
+  connected at user level → a second copy of the user's files (against the coexistence contract).
+- Fix: setup finds a connected base from its block (`Path: <dir>` + `.kits.json` with `base-folder`) in the tools'
+  user-level files. Base first → Frugal's block goes after the base block, points to the base slots, makes no
+  USER.md. Frugal first → re-run switches to the base and tells the user to move the old USER.md content in. Hook /
+  plugin / proxy fall back to the base slots from `global.json`. Check flags a recorded base that is gone.
+- Tests 55/55 (+ base first, + Frugal first then base). Read-only check on this server: the base is detected.
