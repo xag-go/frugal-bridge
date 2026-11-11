@@ -37,7 +37,9 @@ BASE_END = "<!-- base-folder:end -->"
 POINTER = "@AGENTS.md"
 CODEX_LIMIT = 32 * 1024     # Codex default project_doc_max_bytes
 SOFT_LIMIT = 24 * 1024
-HOOK_MARK = ".frugal-bridge/frugal_hook.py"
+HOOK_MARK = ".frugal-bridge/frugal_hook.py"   # old-style marker (path), still recognised for upgrades
+HOOK_TAG = "# frugal-bridge-hook"                # stable marker: independent of folder names (FRUGAL_HOME, project)
+HOOK_FILE = "frugal_hook.py"
 DEFAULT_SLOTS = {"user": "USER.md", "now": "PROGRESS.md", "decisions": "DECISIONS.md", "map": "MAP.md", "sources": "sources/"}
 SLOT_TEMPLATES = {"user": "USER.md", "now": "PROGRESS.md", "decisions": "DECISIONS.md"}
 
@@ -251,7 +253,6 @@ class Setup:
             body = open(s_src).read()
             if read(self.p(rel)) != body:
                 write(self.p(rel), body)
-        cmd = f'python3 "{dst}"'
         rel = ".claude/settings.json"
         t = read(self.p(rel))
         try:
@@ -260,16 +261,35 @@ class Setup:
             raise SystemExit(f"{rel} is not valid JSON; fix it by hand first (nothing changed there).")
         if t is None:
             created.add(rel)
-        hooks = data.setdefault("hooks", {})
-        for ev in ("SessionStart", "UserPromptSubmit"):
-            lst = hooks.setdefault(ev, [])
-            lst[:] = [g for g in lst if not self._is_ours(g)]   # replace our old entry (path/version change)
-            lst.append({"hooks": [{"type": "command", "command": cmd}]})
+        self.merge_hooks(data, ("SessionStart", "UserPromptSubmit"), dst)   # replaces our old entries
         self.change(rel, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
     @staticmethod
     def _is_ours(group):
-        return any(HOOK_MARK in (h.get("command") or "") for h in (group.get("hooks") or []) if isinstance(h, dict))
+        """Our hook entries, in any tool's JSON hook list: the stable tag, or (older versions) our script name/path."""
+        def mine(c):
+            return HOOK_TAG in c or HOOK_MARK in c or re.search(r"(^|[/\s\"'])" + re.escape(HOOK_FILE) + r"[\"']?(\s|$)", c)
+        return any(mine(h.get("command") or "") for h in (group.get("hooks") or []) if isinstance(h, dict))
+
+    @classmethod
+    def merge_hooks(cls, data, events, script):
+        """Rule for every hook Frugal writes, in any tool's settings: replace our old entries, add one tagged entry."""
+        cmd = f'python3 "{script}" {HOOK_TAG}'
+        hooks = data.setdefault("hooks", {})
+        for ev in events:
+            lst = hooks.setdefault(ev, [])
+            lst[:] = [g for g in lst if not (isinstance(g, dict) and cls._is_ours(g))]
+            lst.append({"hooks": [{"type": "command", "command": cmd}]})
+
+    @classmethod
+    def drop_hooks(cls, data):
+        hooks = data.get("hooks", {})
+        for ev in list(hooks):
+            hooks[ev] = [g for g in hooks[ev] if not (isinstance(g, dict) and cls._is_ours(g))]
+            if not hooks[ev]:
+                del hooks[ev]
+        if not hooks:
+            data.pop("hooks", None)
 
     def install_hermes(self, home):
         dst = os.path.join(home, "plugins", "frugal-bridge")
@@ -313,13 +333,7 @@ class Setup:
         t = read(self.p(rel))
         if t:
             data = json.loads(t)
-            hooks = data.get("hooks", {})
-            for ev in list(hooks):
-                hooks[ev] = [g for g in hooks[ev] if not self._is_ours(g)]
-                if not hooks[ev]:
-                    del hooks[ev]
-            if not hooks:
-                data.pop("hooks", None)
+            self.drop_hooks(data)
             if not data and rel in created:
                 self.backup(rel); os.remove(self.p(rel))
             else:
@@ -541,11 +555,7 @@ class GlobalSetup(Setup):
             data = json.loads(t) if t and t.strip() else {}
         except json.JSONDecodeError:
             raise SystemExit(f"{f} is not valid JSON; fix it by hand first (nothing changed there).")
-        hooks = data.setdefault("hooks", {})
-        for ev in ("SessionStart", "UserPromptSubmit"):
-            lst = hooks.setdefault(ev, [])
-            lst[:] = [g for g in lst if not self._is_ours(g)]
-            lst.append({"hooks": [{"type": "command", "command": f'python3 "{dst}"'}]})
+        self.merge_hooks(data, ("SessionStart", "UserPromptSubmit"), dst)
         self.change(f, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
     def uninstall(self):
@@ -573,13 +583,7 @@ class GlobalSetup(Setup):
                 st = read(sf)
                 if st:
                     data = json.loads(st)
-                    hooks = data.get("hooks", {})
-                    for ev in list(hooks):
-                        hooks[ev] = [g for g in hooks[ev] if not self._is_ours(g)]
-                        if not hooks[ev]:
-                            del hooks[ev]
-                    if not hooks:
-                        data.pop("hooks", None)
+                    self.drop_hooks(data)
                     self.change(sf, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         for f in ("frugal_hook.py", "global.json"):
             if os.path.exists(os.path.join(self.d, f)):

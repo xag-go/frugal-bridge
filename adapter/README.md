@@ -29,7 +29,9 @@ The user never chooses: they ask their AI to "set up Frugal-Bridge" (`INSTALL.md
 ## The three mechanisms
 **`hooks/frugal_hook.py`** — one script for two events: session start and prompt submit (context size read from the
 transcript). Setup merges it into the tool's JSON settings key by key: only entries pointing to this script are added,
-replaced on re-run and removed on uninstall; your own hooks and keys are untouched. Tools with no hook that rewrites
+replaced on re-run and removed on uninstall; your own hooks and keys are untouched. Our entries carry the
+tag `# frugal-bridge-hook` (older entries are recognised by the script name), so a moved or renamed folder never
+leaves duplicates; every hook Frugal writes for any tool follows this rule. Tools with no hook that rewrites
 shell output rely on the `frugal-filter-output` skill for that rule. (Uses the hook format of Claude Code.)
 
 **`plugin/frugal-bridge/`** — hooks on API requests, on each turn and on terminal output, plus a `/frugal` command.

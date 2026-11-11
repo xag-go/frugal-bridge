@@ -806,3 +806,11 @@ Readings:
   USER.md. Frugal first → re-run switches to the base and tells the user to move the old USER.md content in. Hook /
   plugin / proxy fall back to the base slots from `global.json`. Check flags a recorded base that is gone.
 - Tests 55/55 (+ base first, + Frugal first then base). Read-only check on this server: the base is detected.
+
+### 2.29 Hook marker fix (2026-11-11)
+- Bug (reported from a review): own hooks were recognised by the `.frugal-bridge/` path; with `FRUGAL_HOME` named
+  differently every `install --global` re-run added the two hooks again (reproduced: 2 per event after 2 runs).
+- Fix: every hook Frugal writes carries the tag `# frugal-bridge-hook`; old entries are recognised by the script name
+  (`frugal_hook.py`), so upgrades replace them. One helper (`merge_hooks` / `drop_hooks`) is the rule for any tool's
+  JSON hooks, project and global. Tests 59/59 (+ custom FRUGAL_HOME re-run byte-identical, + upgrade from old-style
+  hooks, + uninstall leaves other hooks intact, + marker does not match foreign hooks). Repro now: 1 per event after 3 runs.

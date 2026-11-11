@@ -283,3 +283,57 @@ def test_global_frugal_first_then_base(tmp_path, monkeypatch, capsys):
     assert "move what it says into" in out and "owned by the knowledge base" in out
     t = (home / ".claude" / "CLAUDE.md").read_text()
     assert t.count("frugal-bridge:start") == 1 and f"{b}/hot.md" in t
+
+
+def _hooks_by_event(settings):
+    return {ev: [h["command"] for g in lst for h in g["hooks"]] for ev, lst in json.loads(settings.read_text()).get("hooks", {}).items()}
+
+
+def test_global_custom_frugal_home_no_duplicate_hooks(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    monkeypatch.setenv("FRUGAL_HOME", str(tmp_path / "my-fb-folder"))      # not named .frugal-bridge
+    (home / ".claude").mkdir()
+    st = home / ".claude" / "settings.json"
+    st.write_text('{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}')
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    first = st.read_bytes()
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    assert st.read_bytes() == first                                          # byte-identical re-run
+    h = _hooks_by_event(st)
+    assert h["SessionStart"] == ["echo mine", f'python3 "{tmp_path}/my-fb-folder/frugal_hook.py" {S.HOOK_TAG}']
+    assert len(h["UserPromptSubmit"]) == 1
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    assert json.loads(st.read_text()) == {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
+
+
+def test_global_upgrade_from_old_style_hooks(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    monkeypatch.setenv("FRUGAL_HOME", str(tmp_path / "fbnew"))
+    (home / ".claude").mkdir()
+    st = home / ".claude" / "settings.json"
+    old = [{"hooks": [{"type": "command", "command": f'python3 "{home}/.frugal-bridge/frugal_hook.py"'}]},
+           {"hooks": [{"type": "command", "command": f'python3 "{tmp_path}/elsewhere/frugal_hook.py"'}]}]
+    other = {"hooks": [{"type": "command", "command": "python3 my_hook.py"}]}
+    st.write_text(json.dumps({"x": 1, "hooks": {"SessionStart": old + [other], "UserPromptSubmit": old[:1]}}))
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    h = _hooks_by_event(st)
+    assert h["SessionStart"].count("python3 my_hook.py") == 1
+    assert sum("frugal_hook.py" in c for c in h["SessionStart"]) == 1           # old ones replaced, not added to
+    assert sum("frugal_hook.py" in c for c in h["UserPromptSubmit"]) == 1
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    assert json.loads(st.read_text()) == {"x": 1, "hooks": {"SessionStart": [other]}}
+
+
+def test_project_hooks_tagged_and_not_duplicated(tmp_path):
+    p = tmp_path / "p"
+    S.Setup(str(p)).install(("claude-code",))
+    S.Setup(str(p)).install(("claude-code",))
+    h = _hooks_by_event(p / ".claude" / "settings.json")
+    assert len(h["SessionStart"]) == 1 and S.HOOK_TAG in h["SessionStart"][0]
+
+
+def test_is_ours_does_not_match_other_hooks():
+    for c in ("python3 my_frugal_hook.py.bak", "echo frugal", "python3 /x/other_hook.py"):
+        assert not S.Setup._is_ours({"hooks": [{"command": c}]}), c
+    for c in ('python3 "/a b/.frugal-bridge/frugal_hook.py"', 'python3 /x/frugal_hook.py', f'python3 "/x/y.py" {S.HOOK_TAG}'):
+        assert S.Setup._is_ours({"hooks": [{"command": c}]}), c
