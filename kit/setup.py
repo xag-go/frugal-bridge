@@ -793,6 +793,11 @@ class GlobalSetup(Setup):
         # the text from before = as it is now, on the first run of this ledger (an older install's snapshot would
         # drop what others added since, e.g. a base's permissions: never restore from it)
         orig = rec["orig"] if "orig" in rec else cur
+        # the file changed since our last write (another kit or the user): the recorded text from before is out of
+        # date (e.g. it still holds a base's hooks that its disconnect removed since). Uninstall must then remove
+        # only our entries, never put that old text back.
+        orig_stale = bool(rec.get("orig_stale")) or ("orig" in rec and rec.get("after") is not None
+                                                     and (cur is None or sha(cur) != rec["after"]))
         notes, made = [], list(rec.get("made") or [])
         if fmt in ("json", "jsonc") and changes:   # record only keys Frugal adds (a value the user had stays theirs)
             try:
@@ -837,6 +842,8 @@ class GlobalSetup(Setup):
             write(path, new)
         ed[path] = {"fmt": fmt, "tool": t, "orig": orig, "after": sha(new), "hooks": hooks or {},
                     "changes": [list(c) for c in changes], "made": made}
+        if orig_stale:
+            ed[path]["orig_stale"] = True
         return True
 
     def undo_edit(self, path, rec):
@@ -852,6 +859,7 @@ class GlobalSetup(Setup):
             return
         stale = rec["fmt"] in ("json", "jsonc") and orig and rec.get("hooks") and \
             (HOOK_TAG in orig or HOOK_FILE in orig)    # the text from before had an older Frugal's hooks
+        stale = stale or bool(rec.get("orig_stale"))    # changed by someone else between two of our runs
         if sha(cur) == rec.get("after") and not stale:
             new = orig                                 # nothing else touched it: the exact bytes from before
         elif rec["fmt"] in ("json", "jsonc"):
@@ -863,6 +871,8 @@ class GlobalSetup(Setup):
                 od = json.loads(HOSTS.strip_jsonc(orig)) if orig and orig.strip() else ({} if orig is not None else None)
             except ValueError:
                 od = None
+            if rec.get("orig_stale") and od:
+                od = None                              # out-of-date text: never compared, never put back
             if od is not None and data == od:
                 new = orig
             elif data == {}:   # empty now: the user's own empty file back, else (another kit's content gone) remove

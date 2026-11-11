@@ -942,3 +942,12 @@ Readings:
   base's file, caps, override, identity files, tier model + effort per tool, hooks per tool, user edits kept,
   report, hook IO per tool, run-once, usage, JS plugins under node. Rehearsal on a path-rewritten copy of the user's
   Claude / Codex / Gemini / Hermes config: install OK, re-run identical, uninstall leaves only the Frugal parts gone.
+
+### 2.38 Re-run after another kit changed a settings file (2026-11-11)
+- Bug (found by the Skeleton Base suite against 2.37, real `brain.py` connect → Frugal install → disconnect → Frugal
+  re-run → Frugal uninstall): the re-run kept the ledger's "text from before" (which still held the base's hooks and
+  folder entry) and stored a new "hash after"; uninstall saw an untouched file and wrote that old text back, so the
+  disconnected base's hooks and `additionalDirectories` came back in `~/.claude/settings.json`.
+- Fix: a re-run that finds the file changed since Frugal's last write marks the recorded text `orig_stale`; uninstall
+  then removes only Frugal's own keys/hooks (and removes a file left empty unless the user's original was empty).
+- Regression test `test_global_rerun_after_base_disconnect_never_brings_base_entries_back`. Tests 236/236.

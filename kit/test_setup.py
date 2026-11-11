@@ -485,6 +485,31 @@ def test_global_uninstall_after_base_disconnect_leaves_nothing(tmp_path, monkeyp
     assert now == pristine
 
 
+def test_global_rerun_after_base_disconnect_never_brings_base_entries_back(tmp_path, monkeypatch):
+    """A re-run after another kit changed a settings file (a base connected, Frugal installed, the base
+    disconnected, Frugal re-run): uninstall must not put back the text from before the other kit's change (the
+    base's hooks and folder entry would come back from the dead)."""
+    home = _fake_home(tmp_path, monkeypatch)
+    b = _bare_base(tmp_path / "kb")
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text("my rules\n")
+    sj = home / ".claude" / "settings.json"
+    pristine = {p: p.read_bytes() for p in home.rglob("*") if p.is_file()}
+    base_part = {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": f"python3 {b}/tools/brain.py collect"}]}]},
+                 "permissions": {"additionalDirectories": [str(b)]}}
+    sj.write_text(json.dumps(base_part, indent=2) + "\n")                  # 1. the base connects
+    assert S.main(["setup.py", "install", "--global", "--hosts", "claude-code"]) == 0      # 2. Frugal
+    st = json.loads(sj.read_text())                                         # 3. the base disconnects
+    del st["hooks"]["SessionEnd"]; del st["permissions"]
+    sj.write_text(json.dumps(st, indent=2) + "\n")
+    assert S.main(["setup.py", "install", "--global", "--hosts", "claude-code"]) == 0      # 4. Frugal re-run
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0                              # 5. Frugal leaves
+    assert "brain.py" not in (sj.read_text() if sj.exists() else ""), sj.read_text()
+    assert str(b) not in (sj.read_text() if sj.exists() else "")
+    now = {p: p.read_bytes() for p in home.rglob("*") if p.is_file() and ".frugal-bridge" not in str(p)}
+    assert now == pristine
+
+
 def test_global_uninstall_restores_users_own_empty_files(tmp_path, monkeypatch):
     home = _fake_home(tmp_path, monkeypatch)
     (home / ".claude").mkdir(); (home / ".claude" / "skills").mkdir()
