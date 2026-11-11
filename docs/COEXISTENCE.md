@@ -11,7 +11,7 @@ products. Either can be used alone. Either can be installed first, the other lat
 |---|---|---|
 | C1 | `AGENTS.md` | Both kits put their rules in the root `AGENTS.md` |
 | C2 | Pointer files | Both create `CLAUDE.md` / `GEMINI.md` one-liners |
-| C3 | Owner files | Frugal has USER / PROGRESS / DECISIONS / MAP; Base has `wiki/me/`, `hot.md`, `wiki/decisions/`, `wiki/index.md` — same jobs, two copies |
+| C3 | User files | Frugal has USER / PROGRESS / DECISIONS / MAP; Base has `wiki/me/`, `hot.md`, `wiki/decisions/`, `wiki/index.md` — same jobs, two copies |
 | C4 | Read order | Frugal: "read USER + PROGRESS first"; Base: "read hot.md, then index" |
 | C5 | Skills | Both ship skills; same name possible (e.g. `handoff`) |
 | C6 | Hooks / plugins | Both want SessionStart / post-edit hooks in the same host config (`.claude/settings.json`, Hermes plugins) |
@@ -67,7 +67,7 @@ Security/permissions always win over token savings.
 | 3 | **Base first, Frugal later** | Frugal setup sees `base-folder` in `.kits.json` → creates **no** slot files, uses base slot paths, adds only its block + skills + adapter. |
 | 4 | **Frugal first, Base later** | Base setup sees `frugal-bridge` → **imports** Frugal's slot files: USER → `wiki/me/`, PROGRESS → `hot.md` (+ history in `progress/`), DECISIONS → `wiki/decisions/`, MAP → `wiki/index.md`, `sources/` → `raw/`. Originals copied to `raw/exports/frugal-<date>/`. Old files become one-line stubs ("moved to …") for one transition period. Rewrites `slots` in `.kits.json`. Frugal's block and adapter untouched; adapter picks the new paths on next session. |
 | 5 | Both at once | Run Base first, then Frugal (= case 3). A combined installer just calls both in that order. |
-| 6 | Frugal in several projects, one Base later | Each project has its own `.kits.json`. Base import runs per project: owner-level USER merged once into `wiki/me/` (duplicates flagged for review, not overwritten); each project's PROGRESS/DECISIONS → `wiki/projects/<slug>/`. Project `.kits.json` slots then point into the base. |
+| 6 | Frugal in several projects, one Base later | Each project has its own `.kits.json`. Base import runs per project: user-level USER merged once into `wiki/me/` (duplicates flagged for review, not overwritten); each project's PROGRESS/DECISIONS → `wiki/projects/<slug>/`. Project `.kits.json` slots then point into the base. |
 | 7 | Remove Frugal (Base stays) | Remove its block, skills, adapter, `.kits.json` entry. Base untouched. |
 | 8 | Remove Base (Frugal stays) | Base uninstall **exports slots back** to plain USER/PROGRESS/DECISIONS/MAP files, points `slots` to them, then removes its block. Frugal keeps working. |
 | 9 | Upgrade either | Replace own block (version bump in marker), own skills, own hooks; never touches the other kit. |
