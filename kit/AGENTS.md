@@ -30,7 +30,9 @@ max can return nothing).
 - The main agent runs on top, so **checkable work (code with tests, extraction, formatting) goes to a cheap helper**,
   not done by the main agent itself. Small replies (noting a preference, a short answer) it does itself, no helper.
 - **Checkable work starts cheap and moves up only on a real failed check** (tests fail, exact answer wrong):
-  cheap → mid (high) → top (medium).
+  cheap → mid (high) → top (medium). Move to a bigger model, not only more effort: a misread spec stays misread.
+  The check must come from the task (acceptance tests, the expected answer), not only tests the agent wrote itself —
+  those pass on a misread spec.
 - **Judgment work goes straight to the right tier.** A rule check (word count, script, keywords) does not show
   quality, so a cheap answer would never be escalated.
 - **One reviewer per piece of work**, model picked by the stakes. A second reviewer only on a real signal (failed

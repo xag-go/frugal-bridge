@@ -752,3 +752,35 @@ used by the top-tier agent, together with grep (FC), not instead of it.
   URL, chat apps, own app); INSTALL.md no longer asks the agent which product it is — setup decides.
 - Real test: Claude Code (Sonnet 5.5) from one sentence, answers in French: auto-installed hooks, copied the plugin to
   the (test) plugin home without enabling it, listed the proxy for Codex, check OK, $0.11, 5 turns.
+
+### 2.26 External routing playbooks (2026-11-11)
+Sources: "Model Routing Playbook" (Notion, @donimas, checked 2026-10-05) + repo donimas/ai-routing (23★, templates:
+triage/quick/build/deep/verifier subagents, Stop-hook test gate); celiktech24-cell/smart-task-router (30★, MIT, skill +
+5 agents: scout writes CONTEXT.md, Opus plans with contracts, Haiku/Sonnet build, check, escalate); murphmaxxing
+"Omega" (Opus xhigh boss + Haiku workers, "Done when:" check per brief, autocompact 40%, reflect skill).
+Most of it is already in the kit and measured (effort before model, one tier below top, cheap + real check + escalate,
+handoff files, one reviewer, plan for multi-file). New claims tested on test L (click repo, 6 tasks, 24 hidden tests):
+
+| Arm | Setup | Hidden tests (runs) | Cost/run |
+|---|---|---|---|
+| X (now 6 runs) | Haiku low | 24·4·24·24·24·24 | $0.017 |
+| XE | Haiku low → re-run at Haiku medium when the task check fails ("low everywhere, re-run failures") | 24×5 (0 escalations) | $0.017 |
+| XS | Haiku low + Stop gate (repo suite must pass before DONE) | 4·24·24·24·24 (gate fired 0×) | $0.017 |
+| SS | Sonnet low + Stop gate | 10·10·10 (gate fired 0×) | $0.138 |
+| SE | Sonnet low → re-run at Sonnet high when the task check fails | 9·9·24 (escalated 3 tasks/run) | $0.267 |
+| K (ref) | Haiku medium | 24×3 | $0.024 |
+| Z (ref) | Sonnet high | 24×3 | $0.266 |
+| E (ref) | tiers, re-run one model up | 24×3 | $0.146 |
+
+Readings:
+- **Stop gate on the agent's own tests: no effect** — fired 0 times in 8 runs; every failure was a misread spec and the
+  agent's own tests passed. Not added. A gate only helps with an independent check (CI / acceptance tests).
+- **"Low + re-run failures at high effort": not reproduced.** Sonnet low→high cost the same as Sonnet high everywhere
+  and still failed 2 of 3 runs (the same misread twice). Re-running one *model* up (arm E) fixed it. → Kit line added:
+  escalate to a bigger model, and the check must come from the task.
+- Haiku low: 1 failure in 6 runs → stays "risky"; Haiku medium stays the default for checkable work.
+- Not tested, already covered: Opus xhigh boss (xhigh = 3–8× cost, no gain, §2.8), autocompact 40% (our 150k
+  handoff/compact, §2.x), triage subagent per task (extra call; main-agent routing 7/8), scout CONTEXT.md (= MAP.md arm
+  M, no gain). Not testable short-term: reflect skill (needs weeks of real use) — candidate.
+- Auto routers in the playbook (LiteLLM, OpenRouter, Jev…): its own sources say they often lose to the best single
+  model; agrees with our Jev test. Not added.
