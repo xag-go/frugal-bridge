@@ -34,7 +34,7 @@ Install once: from then on it works by itself in every project and every new ses
 
 **By hand:**
 ```bash
-git clone https://github.com/xag-go/frugal-bridge && cd frugal-bridge
+git clone <this repository's URL> frugal-bridge && cd frugal-bridge
 python3 kit/setup.py install --global      # once: every agent tool on this machine, every folder, every new session
 python3 kit/setup.py check --global
 python3 kit/setup.py uninstall --global    # restores your files

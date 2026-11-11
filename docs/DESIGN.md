@@ -667,7 +667,7 @@ Full detail and numbers: `abtest/RESULTS.md` (single source of truth). Summary:
 | One adapter (auto-picked) | `adapter/` (hooks, plugin, proxy mechanisms) + `setup.py --hosts auto` | built 2026-11-11: setup detects agent tools and uses the strongest way each allows; docs present it as one adapter for any tool/provider |
 | Install once, everywhere | `setup.py install --global` (default in INSTALL.md) | built 2026-11-11: rules in each tool's user-level file, user-level hooks/skills/plugin, one `~/.frugal-bridge/USER.md`; real test: new session in an empty folder loaded the rules (RESULTS §2.27) |
 | Agent-driven install | `INSTALL.md` (public repo root) | built; real test: Claude Code set it up from one sentence, check OK, new session loads the rules (RESULTS §2.24) |
-| Public repo | github.com/xag-go/frugal-bridge (public, MIT) | v0.1.0 pushed 2026-11-11: kit, adapters, docs (DESIGN, RESULTS, COEXISTENCE); harness not published. Sync: `./publish.sh` then commit in `~/frugal-bridge-public` |
+| Public repo | <this repository's URL> (public, MIT) | v0.1.0 pushed 2026-11-11: kit, adapters, docs (DESIGN, RESULTS, COEXISTENCE); harness not published. Sync: `./publish.sh` then commit in `~/frugal-bridge-public` |
 | Week test on real work | — | not started (after live install) |
 
 
