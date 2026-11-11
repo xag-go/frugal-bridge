@@ -185,7 +185,13 @@ def _fake_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     for e in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "HERMES_HOME", "FRUGAL_HOME"):
         monkeypatch.delenv(e, raising=False)
-    monkeypatch.setattr(S.shutil, "which", lambda b: None)
+    # a tool counts as installed by its binary: these tests make a tool "present" by creating its folder
+    present = {"claude": ".claude", "codex": ".codex", "hermes": ".hermes", "gemini": ".gemini"}
+    def which(b):
+        if b == "hermes" and os.environ.get("HERMES_HOME") and os.path.isdir(os.environ["HERMES_HOME"]):
+            return "/fake/bin/hermes"
+        return f"/fake/bin/{b}" if b in present and (home / present[b]).is_dir() else None
+    monkeypatch.setattr(S.shutil, "which", which)
     return home
 
 
@@ -300,7 +306,8 @@ def test_global_custom_frugal_home_no_duplicate_hooks(tmp_path, monkeypatch):
     assert S.main(["setup.py", "install", "--global"]) == 0
     assert st.read_bytes() == first                                          # byte-identical re-run
     h = _hooks_by_event(st)
-    assert h["SessionStart"] == ["echo mine", f'python3 "{tmp_path}/my-fb-folder/frugal_hook.py" {S.HOOK_TAG}']
+    assert h["SessionStart"] == ["echo mine",
+                                 f'python3 "{tmp_path}/my-fb-folder/frugal_hook.py" --tool claude-code --event start {S.HOOK_TAG}']
     assert len(h["UserPromptSubmit"]) == 1
     assert S.main(["setup.py", "uninstall", "--global"]) == 0
     assert json.loads(st.read_text()) == {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
