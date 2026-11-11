@@ -3,9 +3,17 @@
 (docs/COEXISTENCE.md): marked blocks only, `.kits.json` registry, slots owned by a base folder when
 present, key-level JSON merge for host settings, idempotent, reversible, backups of every touched file.
 
-  python3 setup.py install   <dir> [--hosts auto|claude-code,gemini,hermes,none] [--hermes-home PATH]
+  python3 setup.py install   --global [--hosts auto|claude-code,codex,gemini,opencode,hermes]   (every project)
+  python3 setup.py uninstall --global
+  python3 setup.py check     --global
+  python3 setup.py install   <dir> [--hosts auto|claude-code,gemini,hermes,none] [--hermes-home PATH]   (one folder)
   python3 setup.py uninstall <dir>
   python3 setup.py check     <dir>
+
+--global (recommended): the rules go into each agent tool's own user-level instruction file, so they apply in every
+folder and every new session with nothing more to do; hooks/skills/plugin are installed at user level too. The user
+file lives in ~/.frugal-bridge/USER.md (FRUGAL_HOME to move it). Per-project files (PROGRESS, PROJECT, DECISIONS) are
+created in a project only when there is something to put in them.
 
 The rules (AGENTS.md block, pointer files, skills, templates) work with any agent. The adapter is picked
 automatically (`--hosts auto`, the default): for every agent tool found it uses the strongest way that tool allows —
@@ -396,7 +404,199 @@ class Setup:
         return "\n".join(out)
 
 
+def frugal_home():
+    return os.environ.get("FRUGAL_HOME") or os.path.expanduser("~/.frugal-bridge")
+
+
+def global_targets():
+    """tool -> (home dir, user-level instruction file, binary). Homes follow each tool's own env override."""
+    e, h = os.environ.get, os.path.expanduser
+    return {
+        "claude-code": (e("CLAUDE_CONFIG_DIR") or h("~/.claude"), "CLAUDE.md", "claude"),
+        "codex": (e("CODEX_HOME") or h("~/.codex"), "AGENTS.md", "codex"),
+        "gemini": (h("~/.gemini"), "GEMINI.md", "gemini"),
+        "opencode": (h("~/.config/opencode"), "AGENTS.md", "opencode"),
+        "hermes": (e("HERMES_HOME") or h("~/.hermes"), "SOUL.md", "hermes"),
+    }
+
+
+GLOBAL_NOTE = """
+## Where your files are (installed for every project)
+These rules apply in every folder. The user file is `{user}`: read it at session start together with the
+current project's `PROGRESS.md` (one call). Project files (`PROGRESS.md`, `PROJECT.md`, `DECISIONS.md`, `sources/`)
+live in the current project folder; create one only when you have something to put in it. If the project has a
+`.kits.json`, its slots win. A preference or the user's name goes to `{user}`, not to a project file.
+"""
+
+
+class GlobalSetup(Setup):
+    """User-level install: one marked block per tool's own instruction file (any folder, any session)."""
+
+    def __init__(self):
+        super().__init__(frugal_home())
+
+    def backup(self, rel):
+        src = self.p(rel)
+        if not os.path.exists(src):
+            return
+        if not self.backup_dir:
+            self.backup_dir = os.path.join(self.d, "backup", f"{dt.datetime.now():%Y%m%d-%H%M%S-%f}")
+        dst = os.path.join(self.backup_dir, os.path.abspath(src).lstrip(os.sep))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst) if os.path.isfile(src) else shutil.copytree(src, dst, dirs_exist_ok=True)
+
+    def reg_path(self):
+        return os.path.join(self.d, "global.json")
+
+    def reg(self):
+        return json.loads(read(self.reg_path()) or "{}")
+
+    def detect(self):
+        return [t for t, (home, _, b) in global_targets().items() if shutil.which(b) or os.path.isdir(home)]
+
+    def install(self, hosts=None, hermes_home=None):
+        os.makedirs(self.d, exist_ok=True)
+        r = self.reg()
+        tools = r.setdefault("tools", {})
+        user = os.path.join(self.d, "USER.md")
+        if not os.path.exists(user):
+            write(user, open(os.path.join(KIT, "templates", "USER.md")).read()); self.log.append(f"created {user}")
+        body = (open(os.path.join(KIT, "AGENTS.md")).read() + "\n\n" + open(os.path.join(KIT, "ROUTING.md")).read()
+                + "\n" + GLOBAL_NOTE.format(user=user))
+        targets = global_targets()
+        hosts = [h for h in (hosts or self.detect()) if h in targets]
+        for t in hosts:
+            home, fname, _ = targets[t]
+            f = os.path.join(home, fname)
+            prev = tools.get(t, {})
+            self._modes = {f: prev.get("mode")} if prev.get("mode") else {}
+            existed = os.path.exists(f)
+            mode = self.put_block(f, body, after_base=True)
+            tools[t] = {"file": f, "mode": mode, "created": prev.get("created", not existed)}
+            if t == "claude-code":
+                self.global_claude(home)
+            if t in ("claude-code", "codex"):
+                self.copy_skills(os.path.join(home, "skills"))
+            if t == "hermes":
+                self.copy_skills(os.path.join(home, "skills", "frugal-bridge"))
+                dst = os.path.join(home, "plugins", "frugal-bridge")
+                shutil.copytree(os.path.join(ROOT, "adapter", "plugin", "frugal-bridge"), dst, dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns("__pycache__"))
+                tools[t]["plugin"] = dst
+        r["version"] = VERSION
+        write(self.reg_path(), json.dumps(r, indent=2) + "\n")
+        return self.check(), self.log
+
+    def copy_skills(self, dst_root):
+        for sk in sorted(os.listdir(os.path.join(KIT, "skills"))):
+            body = open(os.path.join(KIT, "skills", sk, "SKILL.md")).read()
+            f = os.path.join(dst_root, sk, "SKILL.md")
+            if read(f) != body:
+                write(f, body)
+
+    def global_claude(self, home):
+        dst = os.path.join(self.d, "frugal_hook.py")
+        new = open(os.path.join(ROOT, "adapter", "hooks", "frugal_hook.py")).read()
+        if read(dst) != new:
+            write(dst, new); os.chmod(dst, 0o755)
+        f = os.path.join(home, "settings.json")
+        t = read(f)
+        try:
+            data = json.loads(t) if t and t.strip() else {}
+        except json.JSONDecodeError:
+            raise SystemExit(f"{f} is not valid JSON; fix it by hand first (nothing changed there).")
+        hooks = data.setdefault("hooks", {})
+        for ev in ("SessionStart", "UserPromptSubmit"):
+            lst = hooks.setdefault(ev, [])
+            lst[:] = [g for g in lst if not self._is_ours(g)]
+            lst.append({"hooks": [{"type": "command", "command": f'python3 "{dst}"'}]})
+        self.change(f, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+    def uninstall(self):
+        r = self.reg()
+        targets = global_targets()
+        for t, info in (r.get("tools") or {}).items():
+            f = info["file"]
+            txt = read(f)
+            if txt is not None:
+                new, had = self.strip_block(txt, info.get("mode"))
+                if had and info.get("created") and not new.strip():
+                    self.backup(f); os.remove(f); self.log.append(f"removed {f}")
+                elif had:
+                    self.change(f, new)
+            home = targets[t][0] if t in targets else os.path.dirname(f)
+            skills = os.path.join(home, "skills", "frugal-bridge") if t == "hermes" else os.path.join(home, "skills")
+            for sk in os.listdir(os.path.join(KIT, "skills")):
+                shutil.rmtree(os.path.join(skills, sk), ignore_errors=True)
+            if t == "hermes":
+                shutil.rmtree(os.path.join(home, "skills", "frugal-bridge"), ignore_errors=True)
+                shutil.rmtree(info.get("plugin") or os.path.join(home, "plugins", "frugal-bridge"), ignore_errors=True)
+                self.log.append("plugin folder removed; if you enabled it, also run its disable command")
+            if t == "claude-code":
+                sf = os.path.join(home, "settings.json")
+                st = read(sf)
+                if st:
+                    data = json.loads(st)
+                    hooks = data.get("hooks", {})
+                    for ev in list(hooks):
+                        hooks[ev] = [g for g in hooks[ev] if not self._is_ours(g)]
+                        if not hooks[ev]:
+                            del hooks[ev]
+                    if not hooks:
+                        data.pop("hooks", None)
+                    self.change(sf, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        for f in ("frugal_hook.py", "global.json"):
+            if os.path.exists(os.path.join(self.d, f)):
+                os.remove(os.path.join(self.d, f))
+        self.log.append(f"kept {os.path.join(self.d, 'USER.md')} (your preferences) and backups")
+        return self.log
+
+    def check(self):
+        out, ok = [], True
+        tools = (self.reg().get("tools") or {})
+        if not tools:
+            return "PROBLEMS\nnot installed for any tool (no agent tool found? use --hosts)"
+        for t, info in tools.items():
+            txt = read(info["file"]) or ""
+            n = len(START_RE.findall(txt)); b = len(txt.encode())
+            out.append(f"{t}: {info['file']} block={n} size={b}"); ok &= n == 1
+            if b > CODEX_LIMIT:
+                out.append(f"  {info['file']} over 32 KiB: some tools read only the first 32 KiB"); ok = False
+        if not os.path.exists(os.path.join(self.d, "USER.md")):
+            out.append("USER.md missing"); ok = False
+        out.insert(0, "OK" if ok else "PROBLEMS")
+        return "\n".join(out)
+
+
+def main_global(argv):
+    g = GlobalSetup()
+    hosts = None
+    if "--hosts" in argv and argv[argv.index("--hosts") + 1] != "auto":
+        hosts = argv[argv.index("--hosts") + 1].split(",")
+    if argv[1] == "install":
+        rep, log = g.install(hosts)
+        print("\n".join(log)); print(rep)
+        tools = g.reg().get("tools", {})
+        print("Enforcement on this machine (every folder, every new session):")
+        print("  rules: " + ", ".join(sorted(tools)) + " load them by themselves")
+        if "claude-code" in tools:
+            print("  hooks: context watch + start files (tools with session/prompt hooks)")
+        if "hermes" in tools:
+            print(f"  plugin: copied to {tools['hermes'].get('plugin')} — enable it to turn it on (restarts that tool's gateway)")
+        proxy = [b for b in PROXY_TOOLS if shutil.which(b)]
+        if proxy:
+            print(f"  proxy available for: {', '.join(proxy)} — optional, adds enforcement (adapter/proxy/)")
+        print(f"  user file: {os.path.join(g.d, 'USER.md')} — fill it (name of the main agent, language, style)")
+        return 0 if rep.startswith("OK") else 1
+    if argv[1] == "uninstall":
+        print("\n".join(g.uninstall())); return 0
+    rep = g.check(); print(rep)
+    return 0 if rep.startswith("OK") else 1
+
+
 def main(argv):
+    if len(argv) >= 2 and "--global" in argv and argv[1] in ("install", "uninstall", "check"):
+        return main_global(argv)
     if len(argv) < 3 or argv[1] not in ("install", "uninstall", "check"):
         print(__doc__); return 2
     s = Setup(argv[2])

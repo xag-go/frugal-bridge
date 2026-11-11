@@ -29,14 +29,16 @@ verbose output are the main levers there.
 
 ## Set it up
 **Easiest:** give your AI agent this repo and say *"set up Frugal-Bridge for me"*. It follows [`INSTALL.md`](INSTALL.md):
-asks you 4 short questions, installs, checks, and tells you what is enforced on your machine.
+asks you a few short questions, installs, checks, and tells you what is enforced on your machine.
+Install once: from then on it works by itself in every project and every new session.
 
 **By hand:**
 ```bash
 git clone https://github.com/xag-go/frugal-bridge && cd frugal-bridge
-python3 kit/setup.py install /path/to/your/project      # finds your agent tools and picks the adapter by itself
-python3 kit/setup.py check /path/to/your/project
-python3 kit/setup.py uninstall /path/to/your/project    # restores your files byte for byte
+python3 kit/setup.py install --global      # once: every agent tool on this machine, every folder, every new session
+python3 kit/setup.py check --global
+python3 kit/setup.py uninstall --global    # restores your files
+# one folder only: python3 kit/setup.py install /path/to/project
 ```
 Before installing, edit `kit/ROUTING.md` with the models you use (re-run `install` after any change).
 

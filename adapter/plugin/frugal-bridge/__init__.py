@@ -114,6 +114,10 @@ def slots(project_dir):
         f = os.path.join(root, s[x])
         if os.path.isfile(f):
             out[x] = f
+    if "user" not in out:  # user-level install (setup.py --global): one USER.md for every project
+        g = os.path.join(os.environ.get("FRUGAL_HOME") or os.path.expanduser("~/.frugal-bridge"), "USER.md")
+        if os.path.isfile(g):
+            out["user"] = g
     return out
 
 

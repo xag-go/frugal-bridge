@@ -784,3 +784,16 @@ Readings:
   M, no gain). Not testable short-term: reflect skill (needs weeks of real use) — candidate.
 - Auto routers in the playbook (LiteLLM, OpenRouter, Jev…): its own sources say they often lose to the best single
   model; agrees with our Jev test. Not added.
+
+### 2.27 Install once, works everywhere (`setup.py --global`, 2026-11-11)
+- User: after "set it up", it must work by itself — not per folder. New default: `install --global` writes the rules
+  block into each found tool's own user-level instruction file (Claude Code `~/.claude/CLAUDE.md`, Codex
+  `~/.codex/AGENTS.md`, Gemini CLI `~/.gemini/GEMINI.md`, OpenCode `~/.config/opencode/AGENTS.md`, Hermes
+  `$HERMES_HOME/SOUL.md`), user-level hooks/skills, plugin copy (enable = user's yes). One user file
+  `~/.frugal-bridge/USER.md`; the hook/plugin/proxy fall back to it when a project has none. Project files are created
+  only when needed. Uninstall restores every user file; folder install still exists.
+- Tests 53/53 (+ global install/idempotent/uninstall-restores, + adapter finds the global user file).
+- Real test (isolated HOME): Claude Code Sonnet 5.5, one sentence → global install for Claude Code + Codex + Hermes,
+  USER.md filled (Nora, French, short), plugin not enabled, project folder untouched, 7 turns $0.10. Then a **new
+  session in another, empty folder** (Haiku): "Je m'appelle Nora, et je réponds en français, de façon courte." The
+  real home was not touched.

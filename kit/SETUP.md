@@ -1,7 +1,8 @@
 # Frugal-Bridge — setup on any AI host
 
 **Easiest:** ask your AI agent to "set up Frugal-Bridge" — it follows `INSTALL.md`.
-**By hand:** `python3 kit/setup.py install /path/to/project` · `check` · `uninstall`. Idempotent, reversible, backups
+**By hand:** `python3 kit/setup.py install --global` (once, every folder and every new session) · `check --global` ·
+`uninstall --global`. One folder only: `install /path/to/project`. Idempotent, reversible, backups
 in `<project>/.frugal-bridge/backup/`. Works alone or next to a knowledge base (any install order — see below).
 
 The kit = `AGENTS.md` (rules) + `ROUTING.md` (tiers → models) + `templates/` + `skills/`. Your files (USER, PROGRESS,

@@ -177,3 +177,63 @@ def test_cli_hosts_none_is_rules_only(tmp_path, capsys):
     p = tmp_path / "p"
     assert (p / "AGENTS.md").exists() and not (p / "CLAUDE.md").exists() and not (p / ".claude").exists()
     assert "Enforcement on this machine" in capsys.readouterr().out
+
+
+def _fake_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for e in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "HERMES_HOME", "FRUGAL_HOME"):
+        monkeypatch.delenv(e, raising=False)
+    monkeypatch.setattr(S.shutil, "which", lambda b: None)
+    return home
+
+
+def test_global_install_every_tool_and_clean_uninstall(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text("# my own rules\nkeep me\n")
+    (home / ".claude" / "settings.json").write_text('{"model": "x", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "mine"}]}]}}')
+    (home / ".codex").mkdir()
+    (home / ".hermes").mkdir()
+    (home / ".hermes" / "SOUL.md").write_text("You are Kai.\n")
+    before = {p: p.read_bytes() for p in home.rglob("*") if p.is_file()}
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    cl = (home / ".claude" / "CLAUDE.md").read_text()
+    assert cl.startswith("# my own rules\nkeep me\n") and cl.count("frugal-bridge:start") == 1
+    assert ".frugal-bridge/USER.md" in cl
+    assert (home / ".codex" / "AGENTS.md").read_text().count("frugal-bridge:start") == 1
+    assert (home / ".hermes" / "SOUL.md").read_text().startswith("You are Kai.")
+    assert not (home / ".gemini").exists()          # tool not present -> not touched
+    st = json.loads((home / ".claude" / "settings.json").read_text())
+    assert st["model"] == "x" and st["hooks"]["Stop"][0]["hooks"][0]["command"] == "mine"
+    assert any(".frugal-bridge/frugal_hook.py" in g["hooks"][0]["command"] for g in st["hooks"]["SessionStart"])
+    assert (home / ".claude" / "skills" / "frugal-handoff" / "SKILL.md").exists()
+    assert (home / ".hermes" / "plugins" / "frugal-bridge" / "__init__.py").exists()
+    assert (home / ".frugal-bridge" / "USER.md").exists()
+    # re-run is idempotent
+    snap = {p: p.read_bytes() for p in home.rglob("*") if p.is_file() and "backup" not in str(p)}
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    assert snap == {p: p.read_bytes() for p in home.rglob("*") if p.is_file() and "backup" not in str(p)}
+    # uninstall restores every file the user had
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    for p, b in before.items():
+        if p.name == "settings.json":
+            assert json.loads(p.read_text()) == json.loads(b)
+        else:
+            assert p.read_bytes() == b, p
+    assert not (home / ".codex" / "AGENTS.md").exists()
+    assert not (home / ".claude" / "skills" / "frugal-handoff").exists()
+    assert not (home / ".hermes" / "plugins" / "frugal-bridge").exists()
+
+
+def test_global_user_file_found_by_adapter(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    (home / ".claude").mkdir()
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    import sys; sys.path.insert(0, os.path.join(S.ROOT, "adapter", "hooks"))
+    import frugal_hook
+    proj = tmp_path / "anyproject"; proj.mkdir()
+    (proj / "PROGRESS.md").write_text("x")
+    got = frugal_hook.slots(str(proj))
+    assert got["now"].endswith("PROGRESS.md") and got["user"] == str(home / ".frugal-bridge" / "USER.md")
