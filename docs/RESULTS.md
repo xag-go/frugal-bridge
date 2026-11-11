@@ -843,3 +843,13 @@ Readings:
 - Tests 68/68 (+ base-first → disconnect → uninstall = home byte-identical to before both kits, + user's own empty
   files and existing folders kept). Real E2E in an isolated HOME with the real Skeleton Base `brain.py` (init, connect,
   Frugal install, disconnect, Frugal uninstall): every file byte-identical to the start, no empty folder left.
+
+### 2.33 Uninstall never loses the user's data (2026-11-11)
+- User rule: anyone who removes Frugal-Bridge keeps all their data. Before: skills and plugin folders were deleted
+  whole (a user's edit or added file inside them was lost); an edited rules block was only in the backup.
+- Fix (project and global): setup records the sha of every file it writes; uninstall deletes a file only if it is
+  unchanged since (or identical to the kit's copy) and removes folders only when empty — edited/added files stay and
+  are listed. A rules block the user edited is saved to `kept/<file>.block.md` before removal. Never touched: user
+  file, PROGRESS/PROJECT/DECISIONS/sources (edited ones), usage logs (`<tool home>/frugal-bridge/usage.jsonl`), hook
+  state, backups. The report ends with "your data is kept: …".
+- Tests 70/70 (+ global and project data-safety cases). Real E2E with Skeleton Base re-run: still byte-identical.

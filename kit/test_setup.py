@@ -488,3 +488,50 @@ def test_global_uninstall_restores_users_own_empty_files(tmp_path, monkeypatch):
     assert (home / ".claude" / "settings.json").read_text() == "{}"      # user's own empty file kept as it was
     assert (home / ".claude" / "CLAUDE.md").read_text() == "\n"
     assert (home / ".claude" / "skills").is_dir()                        # existed before: kept
+
+
+def test_global_uninstall_never_loses_user_data(tmp_path, monkeypatch, capsys):
+    home = _fake_home(tmp_path, monkeypatch)
+    (home / ".claude").mkdir(); (home / ".hermes").mkdir()
+    (home / ".hermes" / "SOUL.md").write_text("You are Kai.\n")
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    fh = home / ".frugal-bridge"
+    (fh / "USER.md").write_text("- Name of the main agent: Sara\n")                          # preferences
+    sk = home / ".claude" / "skills" / "frugal-handoff"
+    (sk / "SKILL.md").write_text((sk / "SKILL.md").read_text() + "\nmy own tweak\n")      # edited skill
+    (sk / "notes.md").write_text("mine")                                                   # file added in our folder
+    plug = home / ".hermes" / "plugins" / "frugal-bridge"
+    (plug / "my_patch.py").write_text("x = 1\n")
+    (home / ".hermes" / "frugal-bridge").mkdir(exist_ok=True)
+    (home / ".hermes" / "frugal-bridge" / "usage.jsonl").write_text('{"model": "m"}\n')    # usage log
+    c = home / ".claude" / "CLAUDE.md"
+    c.write_text(c.read_text().replace("<!-- frugal-bridge:end -->", "my line inside the block\n<!-- frugal-bridge:end -->"))
+    other = home / ".claude" / "skills" / "frugal-delegate" / "SKILL.md"                   # unchanged -> removed
+    capsys.readouterr()
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    out = capsys.readouterr().out
+    assert (fh / "USER.md").read_text() == "- Name of the main agent: Sara\n"
+    assert "my own tweak" in (sk / "SKILL.md").read_text() and (sk / "notes.md").read_text() == "mine"
+    assert (plug / "my_patch.py").exists() and not (plug / "__init__.py").exists()
+    assert (home / ".hermes" / "frugal-bridge" / "usage.jsonl").exists()
+    assert not c.exists() and not other.exists()                    # Frugal had created CLAUDE.md
+    saved = list((fh / "kept").glob("*CLAUDE.md.block.md"))
+    assert saved and "my line inside the block" in saved[0].read_text()
+    assert "your data is kept" in out and "saved to" in out
+    assert any((fh / "backup").rglob("CLAUDE.md"))
+
+
+def test_project_uninstall_never_loses_user_data(tmp_path):
+    p = tmp_path / "p"
+    S.Setup(str(p)).install(("claude-code",))
+    (p / "PROGRESS.md").write_text("doing X\n")
+    sk = p / ".claude" / "skills" / "frugal-handoff" / "SKILL.md"
+    sk.write_text(sk.read_text() + "tweak\n")
+    a = p / "AGENTS.md"
+    a.write_text(a.read_text().replace("<!-- frugal-bridge:end -->", "my rule\n<!-- frugal-bridge:end -->"))
+    log = S.Setup(str(p)).uninstall()
+    assert (p / "PROGRESS.md").read_text() == "doing X\n"
+    assert "tweak" in sk.read_text()
+    assert "my rule" in list((p / ".frugal-bridge" / "kept").glob("*AGENTS.md.block.md"))[0].read_text()
+    assert not (p / ".claude" / "skills" / "frugal-delegate").exists()
+    assert any("your data is kept" in l for l in log)
