@@ -441,3 +441,50 @@ def test_global_base_flag(tmp_path, monkeypatch):
     assert not (home / ".frugal-bridge").exists()
     assert S.main(["setup.py", "install", "--global", "--base", str(b)]) == 0
     _check_uses_base(home, b, tmp_path)
+
+
+def test_global_uninstall_after_base_disconnect_leaves_nothing(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    b = _bare_base(tmp_path / "kb")
+    blk = f"<!-- base-folder:start v2 -->\n## KB\nPath: {b}\n<!-- base-folder:end -->"
+    base_hook = {"hooks": [{"type": "command", "command": f"python3 {b}/tools/brain.py collect"}]}
+    # before anything: the user's own files
+    (home / ".claude").mkdir(); (home / ".codex").mkdir(); (home / ".hermes").mkdir()
+    user_claude = "my rules\n"
+    (home / ".claude" / "CLAUDE.md").write_text(user_claude)
+    (home / ".hermes" / "SOUL.md").write_text("You are Kai.\n")
+    pristine = {p: p.read_bytes() for p in home.rglob("*") if p.is_file()}
+    # 1. base connects first (its blocks, a settings.json it creates, an AGENTS.md it creates)
+    (home / ".claude" / "CLAUDE.md").write_text(user_claude + "\n" + blk + "\n")
+    (home / ".codex" / "AGENTS.md").write_text(blk + "\n")
+    (home / ".hermes" / "SOUL.md").write_text("You are Kai.\n" + "\n" + blk + "\n")
+    (home / ".claude" / "settings.json").write_text(json.dumps({"hooks": {"SessionEnd": [base_hook]}}, indent=2))
+    # 2. Frugal installs at user level
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    # 3. base disconnects: removes exactly its own block / hook
+    for f in (home / ".claude" / "CLAUDE.md", home / ".codex" / "AGENTS.md", home / ".hermes" / "SOUL.md"):
+        f.write_text(f.read_text().replace("\n" + blk + "\n", "\n", 1) if not f.read_text().startswith(blk)
+                     else f.read_text().replace(blk + "\n", "", 1))
+    st = json.loads((home / ".claude" / "settings.json").read_text()); del st["hooks"]["SessionEnd"]
+    (home / ".claude" / "settings.json").write_text(json.dumps(st, indent=2))
+    # 4. Frugal uninstalls: no empty leftovers, the user's originals byte-identical
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    assert not (home / ".claude" / "settings.json").exists()          # was {} after removal -> removed
+    assert not (home / ".codex" / "AGENTS.md").exists()                 # newline-only -> removed
+    assert not (home / ".claude" / "skills").exists()                   # empty folders we made -> removed
+    assert not (home / ".codex" / "skills").exists()
+    assert not (home / ".hermes" / "plugins").exists() and not (home / ".hermes" / "skills").exists()
+    now = {p: p.read_bytes() for p in home.rglob("*") if p.is_file() and ".frugal-bridge" not in str(p)}
+    assert now == pristine
+
+
+def test_global_uninstall_restores_users_own_empty_files(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    (home / ".claude").mkdir(); (home / ".claude" / "skills").mkdir()
+    (home / ".claude" / "settings.json").write_text("{}")
+    (home / ".claude" / "CLAUDE.md").write_text("\n")
+    assert S.main(["setup.py", "install", "--global"]) == 0
+    assert S.main(["setup.py", "uninstall", "--global"]) == 0
+    assert (home / ".claude" / "settings.json").read_text() == "{}"      # user's own empty file kept as it was
+    assert (home / ".claude" / "CLAUDE.md").read_text() == "\n"
+    assert (home / ".claude" / "skills").is_dir()                        # existed before: kept

@@ -442,6 +442,7 @@ PROGRESS.md and never create a second copy. Project files (`PROGRESS.md`, `PROJE
 the current project folder, created only when needed. If the project has its own `.kits.json`, its slots win.
 """
 
+KIT_BLOCK_RE = re.compile(r"<!-- (?!frugal-bridge)[a-z0-9-]+:start")
 BASE_PATH_RE = re.compile(r"<!-- base-folder:start[^>]*-->.*?^Path:[ \t]*(.+?)[ \t]*$", re.S | re.M)
 
 
@@ -529,6 +530,33 @@ class GlobalSetup(Setup):
     def reg_path(self):
         return os.path.join(self.d, "global.json")
 
+    # what was there before Frugal first touched a file / folder, so uninstall leaves no empty leftovers
+    def remember(self, path):
+        orig = self.r.setdefault("orig", {})
+        if path not in orig:
+            t = read(path)
+            orig[path] = t if (t is None or len(t) < 256 * 1024) else "<big>"
+        self.remember_dirs(path)
+
+    def remember_dirs(self, path):
+        made = self.r.setdefault("made_dirs", [])
+        stop = os.path.expanduser("~")
+        d = os.path.dirname(os.path.abspath(path))
+        while d and d != stop and d != os.path.dirname(d) and not os.path.exists(d):
+            if d not in made:
+                made.append(d)
+            d = os.path.dirname(d)
+
+    @staticmethod
+    def leftover(orig_known, orig, empty_now):
+        """After our parts are removed and the file is empty: 'remove' it, 'restore' the user's own empty original,
+        or None (keep). An original that had content now gone was another kit's (e.g. a disconnected base)."""
+        if not empty_now:
+            return None
+        if not orig_known or orig is None or orig == "<big>":
+            return "remove"
+        return "restore" if (not orig.strip() or orig.strip() == "{}") else "remove"
+
     def reg(self):
         return json.loads(read(self.reg_path()) or "{}")
 
@@ -537,7 +565,7 @@ class GlobalSetup(Setup):
 
     def install(self, hosts=None, hermes_home=None):
         os.makedirs(self.d, exist_ok=True)
-        r = self.reg()
+        r = self.r = self.reg()
         tools = r.setdefault("tools", {})
         targets = global_targets()
         hosts = [h for h in (hosts or self.detect()) if h in targets]
@@ -567,6 +595,7 @@ class GlobalSetup(Setup):
                 # Creating SOUL.md would replace the tool's default identity: only add to an existing one.
                 r.setdefault("needs_user", {})[t] = f
                 self.pending_block = self.core(body)
+                self.remember_dirs(os.path.join(home, "plugins", "frugal-bridge", "x"))
                 self.copy_skills(os.path.join(home, "skills", "frugal-bridge"))
                 dst = os.path.join(home, "plugins", "frugal-bridge")
                 shutil.copytree(os.path.join(ROOT, "adapter", "plugin", "frugal-bridge"), dst, dirs_exist_ok=True,
@@ -575,6 +604,7 @@ class GlobalSetup(Setup):
                 continue
             self._modes = {f: prev.get("mode")} if prev.get("mode") else {}
             existed = os.path.exists(f)
+            self.remember(f)
             mode = self.put_block(f, body, after_base=True)
             tools[t] = {"file": f, "mode": mode, "created": prev.get("created", not existed)}
             if t == "claude-code":
@@ -582,6 +612,7 @@ class GlobalSetup(Setup):
             if t in ("claude-code", "codex"):
                 self.copy_skills(os.path.join(home, "skills"))
             if t == "hermes":
+                self.remember_dirs(os.path.join(home, "plugins", "frugal-bridge", "x"))
                 self.copy_skills(os.path.join(home, "skills", "frugal-bridge"))
                 dst = os.path.join(home, "plugins", "frugal-bridge")
                 shutil.copytree(os.path.join(ROOT, "adapter", "plugin", "frugal-bridge"), dst, dirs_exist_ok=True,
@@ -595,6 +626,8 @@ class GlobalSetup(Setup):
         for sk in sorted(os.listdir(os.path.join(KIT, "skills"))):
             body = open(os.path.join(KIT, "skills", sk, "SKILL.md")).read()
             f = os.path.join(dst_root, sk, "SKILL.md")
+            if hasattr(self, "r"):
+                self.remember_dirs(f)
             if read(f) != body:
                 write(f, body)
 
@@ -609,21 +642,36 @@ class GlobalSetup(Setup):
             data = json.loads(t) if t and t.strip() else {}
         except json.JSONDecodeError:
             raise SystemExit(f"{f} is not valid JSON; fix it by hand first (nothing changed there).")
+        self.remember(f)
         self.merge_hooks(data, ("SessionStart", "UserPromptSubmit"), dst)
         self.change(f, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
+    def drop_or_restore(self, f, new, empty_now):
+        orig = self.r.get("orig", {})
+        o = orig.get(f)
+        if (not empty_now and isinstance(o, str) and f.endswith(".md") and KIT_BLOCK_RE.search(o)
+                and not KIT_BLOCK_RE.search(new)):
+            # another kit's block (e.g. a base) was there when we came and is gone now: its separators were joined
+            # to ours, so leave the user's text tidy — no extra blank lines at the start or end.
+            new = new.strip("\n") + "\n"
+        how = self.leftover(f in orig, orig.get(f), empty_now)
+        if how == "remove":
+            self.backup(f); os.remove(f); self.log.append(f"removed {f} (empty after removing Frugal-Bridge)")
+        elif how == "restore":
+            self.change(f, orig[f])
+        else:
+            self.change(f, new)
+
     def uninstall(self):
-        r = self.reg()
+        r = self.r = self.reg()
         targets = global_targets()
         for t, info in (r.get("tools") or {}).items():
             f = info["file"]
             txt = read(f)
             if txt is not None:
                 new, had = self.strip_block(txt, info.get("mode"))
-                if had and info.get("created") and not new.strip():
-                    self.backup(f); os.remove(f); self.log.append(f"removed {f}")
-                elif had:
-                    self.change(f, new)
+                if had:
+                    self.drop_or_restore(f, new, not new.strip())
             home = targets[t][0] if t in targets else os.path.dirname(f)
             skills = os.path.join(home, "skills", "frugal-bridge") if t == "hermes" else os.path.join(home, "skills")
             for sk in os.listdir(os.path.join(KIT, "skills")):
@@ -638,13 +686,16 @@ class GlobalSetup(Setup):
                 if st:
                     data = json.loads(st)
                     self.drop_hooks(data)
-                    self.change(sf, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+                    self.drop_or_restore(sf, json.dumps(data, indent=2, ensure_ascii=False) + "\n", data == {})
         for t, info in (r.get("copied") or {}).items():
             shutil.rmtree(os.path.join(info["home"], "skills", "frugal-bridge"), ignore_errors=True)
             shutil.rmtree(info["plugin"], ignore_errors=True)
         for f in ("frugal_hook.py", "global.json"):
             if os.path.exists(os.path.join(self.d, f)):
                 os.remove(os.path.join(self.d, f))
+        for d in sorted(r.get("made_dirs", []), key=len, reverse=True):   # folders we made, only if now empty
+            if os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
         self.log.append(f"kept {os.path.join(self.d, 'USER.md')} (your preferences) and backups")
         return self.log
 

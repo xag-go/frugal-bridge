@@ -832,3 +832,14 @@ Readings:
   (`--base <dir>`, systemd quoting). Each must have `.kits.json` with `base-folder`; a bad `--base` stops with no change.
 - Tests 66/66 (+ Hermes-only home with base found from units, path with a space, re-run; + pointer file; + flag).
   Read-only check on this server: units → the real base found.
+
+### 2.32 Uninstall leaves no empty leftovers (2026-11-11)
+- Case (review): base connected first, Frugal `install --global`, base disconnected, Frugal `uninstall --global` left
+  `{}` in settings.json, a newline-only AGENTS.md, empty skills/ and plugins/ folders.
+- Fix: on first touch Frugal records each file's original content and the folders it creates (`global.json`).
+  Uninstall: a file empty after removing our parts is removed, unless the user's own original was empty (then
+  restored as it was); folders we made are removed only if empty; when another kit's block was there at install and
+  is gone, the user's text is left without extra blank lines.
+- Tests 68/68 (+ base-first → disconnect → uninstall = home byte-identical to before both kits, + user's own empty
+  files and existing folders kept). Real E2E in an isolated HOME with the real Skeleton Base `brain.py` (init, connect,
+  Frugal install, disconnect, Frugal uninstall): every file byte-identical to the start, no empty folder left.
