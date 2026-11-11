@@ -103,7 +103,7 @@ CORE (AGENTS.md)          the DNA: token + quality rules, inherited by everyone
 - Three adapter levels , so enforcement does not depend on the host having hooks:
   1. **Native adapter** (plugin/hook) for the big hosts: Hermes, Claude Code; Codex / Gemini CLI / Cursor /
      OpenClaw if their hooks allow (to verify).
-  2. **Proxy adapter** (`adapters/proxy/`) for ANY host that lets you set the API base URL: sits between host
+  2. **Proxy adapter** (`adapter/proxy/`) for ANY host that lets you set the API base URL: sits between host
      and provider, sees every call, enforces context watch, loop guard, output filter, start files, optional CORE,
      usage log. Keys pass through, nothing stored. Limit: it cannot open a new session itself; it makes the agent
      tell the user, with the handoff ready.
@@ -659,11 +659,12 @@ Full detail and numbers: `abtest/RESULTS.md` (single source of truth). Summary:
 | Templates | `kit/templates/` | built |
 | Skills | `kit/skills/` (6) | built |
 | Setup per host | `kit/SETUP.md` | built |
-| Hermes adapter | `adapters/hermes/frugal-bridge/` | built, tested in isolation; not installed live (user's yes needed) |
-| Claude Code adapter | `adapters/claude-code/frugal_hook.py` | built, tested (one real run) |
-| Proxy adapter (any host with a base URL) | `adapters/proxy/frugal_proxy.py` | built, 18/18 tests + real Claude Code run through it (context notice + loop guard worked, cache intact); Codex real run pending (usage limit until 2026-11-13) — RESULTS §2.22 |
+| Hermes adapter | `adapter/plugin/frugal-bridge/` | built, tested in isolation; not installed live (user's yes needed) |
+| Claude Code adapter | `adapter/hooks/frugal_hook.py` | built, tested (one real run) |
+| Proxy adapter (any host with a base URL) | `adapter/proxy/frugal_proxy.py` | built, 18/18 tests + real Claude Code run through it (context notice + loop guard worked, cache intact); Codex real run pending (usage limit until 2026-11-13) — RESULTS §2.22 |
 | Setup (install/check/uninstall) | `kit/setup.py` | built, 12/12 tests (fresh, re-run identical, uninstall restores, user text byte-identical, JSON merge, base-first, old version, size check, Hermes copy) |
 | Coexistence with a base folder | `docs/COEXISTENCE.md` | contract implemented in setup + adapters (slots from `.kits.json`); Base side (import/export) is the base folder's setup |
+| One adapter (auto-picked) | `adapter/` (hooks, plugin, proxy mechanisms) + `setup.py --hosts auto` | built 2026-11-11: setup detects agent tools and uses the strongest way each allows; docs present it as one adapter for any tool/provider |
 | Agent-driven install | `INSTALL.md` (public repo root) | built; real test: Claude Code set it up from one sentence, check OK, new session loads the rules (RESULTS §2.24) |
 | Public repo | github.com/xag-go/frugal-bridge (public, MIT) | v0.1.0 pushed 2026-11-11: kit, adapters, docs (DESIGN, RESULTS, COEXISTENCE); harness not published. Sync: `./publish.sh` then commit in `~/frugal-bridge-public` |
 | Week test on real work | — | not started (after live install) |

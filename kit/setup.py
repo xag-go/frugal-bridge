@@ -3,12 +3,14 @@
 (docs/COEXISTENCE.md): marked blocks only, `.kits.json` registry, slots owned by a base folder when
 present, key-level JSON merge for host settings, idempotent, reversible, backups of every touched file.
 
-  python3 setup.py install   <dir> [--hosts claude-code,gemini,hermes] [--hermes-home PATH]
+  python3 setup.py install   <dir> [--hosts auto|claude-code,gemini,hermes,none] [--hermes-home PATH]
   python3 setup.py uninstall <dir>
   python3 setup.py check     <dir>
 
-Hermes: copies the plugin into <hermes-home>/plugins/frugal-bridge and writes its config; enabling it
-(`hermes plugins enable frugal-bridge` + gateway restart) is left to the owner.
+The rules (AGENTS.md block, pointer files, skills, templates) work with any agent. The adapter is picked
+automatically (`--hosts auto`, the default): for every agent tool found it uses the strongest way that tool allows —
+session/prompt hooks, a plugin, or (tools with a configurable API base URL) the local proxy, which setup only
+suggests. Plugin-based tools get the plugin copied; enabling it (it restarts that tool's gateway) is left to the user.
 """
 import datetime as dt
 import hashlib
@@ -44,6 +46,23 @@ def write(p, text):
     os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
         f.write(text)
+
+
+HOOK_TOOLS = {"claude-code": ("claude", ".claude", ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")),
+              "gemini": ("gemini", ".gemini", ("GEMINI_CLI",))}
+PLUGIN_TOOLS = {"hermes": ("hermes", None, ("HERMES_HOME", "HERMES_AGENT"))}
+PROXY_TOOLS = ("codex", "cursor-agent", "opencode", "aider", "goose", "continue", "crush", "amp")
+
+
+def detect(project):
+    """Agent tools present on this machine / in this project. Returns (hosts for setup, tools that could use the proxy)."""
+    found = []
+    for name, (binary, folder, envs) in {**HOOK_TOOLS, **PLUGIN_TOOLS}.items():
+        if (any(os.environ.get(e) for e in envs) or shutil.which(binary)
+                or (folder and os.path.isdir(os.path.join(project, folder)))):
+            found.append(name)
+    proxy = [b for b in PROXY_TOOLS if shutil.which(b)]
+    return found, proxy
 
 
 class Setup:
@@ -214,7 +233,7 @@ class Setup:
 
     def install_claude(self, created):
         # hook script lives inside the project so its path is stable; settings merged key by key
-        hook_src = os.path.join(ROOT, "adapters", "claude-code", "frugal_hook.py")
+        hook_src = os.path.join(ROOT, "adapter", "hooks", "frugal_hook.py")
         dst = self.p(HOOK_MARK)
         new = open(hook_src).read()
         if read(dst) != new:
@@ -246,7 +265,7 @@ class Setup:
 
     def install_hermes(self, home):
         dst = os.path.join(home, "plugins", "frugal-bridge")
-        shutil.copytree(os.path.join(ROOT, "adapters", "hermes", "frugal-bridge"), dst, dirs_exist_ok=True,
+        shutil.copytree(os.path.join(ROOT, "adapter", "plugin", "frugal-bridge"), dst, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__"))
         cfgp = os.path.join(home, "frugal-bridge", "config.json")
         cfg = json.loads(read(cfgp) or "{}")
@@ -381,10 +400,15 @@ def main(argv):
     if len(argv) < 3 or argv[1] not in ("install", "uninstall", "check"):
         print(__doc__); return 2
     s = Setup(argv[2])
-    hosts = ("claude-code", "gemini")
+    hosts_arg = argv[argv.index("--hosts") + 1] if "--hosts" in argv else "auto"
+    proxy_tools = []
+    if hosts_arg == "auto":
+        found, proxy_tools = detect(s.d)
+        hosts = tuple(found) + ("claude-code", "gemini")  # pointer files are harmless and help those tools later
+        hosts = tuple(dict.fromkeys(hosts))
+    else:
+        hosts = tuple(h for h in hosts_arg.split(",") if h and h != "none")
     home = None
-    if "--hosts" in argv:
-        hosts = tuple(argv[argv.index("--hosts") + 1].split(","))
     if "--hermes-home" in argv:
         home = argv[argv.index("--hermes-home") + 1]
     elif "hermes" in hosts:
@@ -392,6 +416,15 @@ def main(argv):
     if argv[1] == "install":
         rep, log = s.install(hosts, home)
         print("\n".join(log)); print(rep)
+        print("Enforcement on this machine:")
+        print("  rules (AGENTS.md, skills): every agent that reads the project folder")
+        for h in hosts:
+            if h == "claude-code" and os.path.exists(s.p(".claude/settings.json")):
+                print("  hooks: context watch + start files (agents with session/prompt hooks)")
+            if h == "hermes" and home:
+                print(f"  plugin: copied to {home}/plugins/frugal-bridge — enable it to turn it on (restarts that tool's gateway)")
+        if proxy_tools:
+            print(f"  proxy available for: {', '.join(proxy_tools)} — run adapter/proxy/frugal_proxy.py and point its base URL at it (optional)")
         return 0 if rep.startswith("OK") else 1
     if argv[1] == "uninstall":
         print("\n".join(s.uninstall())); return 0

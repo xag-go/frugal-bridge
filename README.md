@@ -3,8 +3,9 @@
 > **If you are an AI agent asked to set this up: read [`INSTALL.md`](INSTALL.md) and follow it.**
 > Humans: give your agent this repo link and say "set up Frugal-Bridge for me".
 
-**Spend fewer tokens on AI agents without losing quality.** A small, portable set of working rules plus adapters that
-enforce them — for any agent host (Claude Code, Codex, Gemini CLI, Cursor, Hermes, your own app) and any provider.
+**Spend fewer tokens on AI agents without losing quality — with any AI agent, app, or provider.**
+A small set of working rules your AI follows, plus one adapter that enforces them wherever the tool allows it.
+Coding agents, agent frameworks, chat apps, your own app on any API: the rules are plain Markdown any model can read.
 
 Every rule here was A/B tested (3+ runs per cell, real checks first — hidden tests, exact answers — then a blind
 judge, and a human rater for language). Rules that saved tokens but lowered quality were dropped.
@@ -26,44 +27,49 @@ Numbers: [`docs/RESULTS.md`](docs/RESULTS.md). Reasoning, rejected ideas and ope
 Also found: on one subscription plan, output weighed ~2.2× more than cached input per API dollar — so effort and
 verbose output are the main levers there.
 
-## Quick start
+## Set it up
+**Easiest:** give your AI agent this repo and say *"set up Frugal-Bridge for me"*. It follows [`INSTALL.md`](INSTALL.md):
+asks you 4 short questions, installs, checks, and tells you what is enforced on your machine.
+
+**By hand:**
 ```bash
 git clone https://github.com/xag-go/frugal-bridge && cd frugal-bridge
-python3 kit/setup.py install /path/to/your/project            # AGENTS.md block, CLAUDE.md/GEMINI.md pointers, skills, Claude Code hooks
+python3 kit/setup.py install /path/to/your/project      # finds your agent tools and picks the adapter by itself
 python3 kit/setup.py check /path/to/your/project
-python3 kit/setup.py uninstall /path/to/your/project          # restores your files byte for byte
+python3 kit/setup.py uninstall /path/to/your/project    # restores your files byte for byte
 ```
-Before installing, edit `kit/ROUTING.md` with the models you use (re-run `install` after any change). Then name your
-main agent in the project's `USER.md`.
+Before installing, edit `kit/ROUTING.md` with the models you use (re-run `install` after any change).
 
-| Host | How the rules are enforced |
+## Works with everything
+| Where your AI runs | How Frugal-Bridge reaches it |
 |---|---|
-| Claude Code | `AGENTS.md` via `@AGENTS.md` + hooks (context watch, start files) — [`adapters/claude-code`](adapters/claude-code) |
-| Hermes Agent | plugin (context watch, start files, output filter, `/frugal` usage report) — [`adapters/hermes`](adapters/hermes) |
-| Any host with a configurable API base URL (Codex, Cursor, Aider, OpenCode…) | local proxy — [`adapters/proxy`](adapters/proxy) |
-| Codex / Gemini CLI / Cursor without the proxy | they read `AGENTS.md` directly (rules followed, not enforced) |
-| Chat apps (ChatGPT, Claude.ai, Gemini) | paste `kit/AGENTS.md` into project instructions (advice only) |
+| Any agent that reads a project folder | rules file `AGENTS.md` (+ one-line pointers for tools that use another file name), skills, templates |
+| Tools with hooks or plugins | the adapter enforces the rules automatically (context watch, start files, output filter, usage report) |
+| Any tool that lets you set the API base URL — any provider | the adapter's local proxy enforces them (plus a loop guard) |
+| Chat apps | paste `kit/AGENTS.md` into the project instructions (followed, not enforced) |
+| Your own app / API | put `kit/AGENTS.md` in the system prompt, or route through the proxy |
 
-Details per host: [`kit/SETUP.md`](kit/SETUP.md). Works alone or next to a knowledge-base folder, in any install
-order: [`docs/COEXISTENCE.md`](docs/COEXISTENCE.md).
+You don't pick an adapter: `setup.py` detects what is on the machine and uses the strongest way each tool allows.
+Details: [`adapter/README.md`](adapter/README.md), [`kit/SETUP.md`](kit/SETUP.md). Works alone or next to a
+knowledge-base folder, in any install order: [`docs/COEXISTENCE.md`](docs/COEXISTENCE.md).
 
 ## What's inside
 - `kit/AGENTS.md` — the rules (~7 KB). `kit/ROUTING.md` — cheap / mid / top tiers → your models.
 - `kit/templates/` — USER, PROJECT, PROGRESS, DECISIONS, MAP, ROLE, helper BRIEF.
 - `kit/skills/frugal-*` — handoff, new-session, delegate, save-sources, new-agent, filter-output.
 - `kit/setup.py` — install / check / uninstall (idempotent, reversible, backups).
-- `adapters/` — Hermes plugin, Claude Code hook, provider proxy.
+- `adapter/` — one adapter: hooks, plugin and proxy mechanisms, picked automatically.
 
 ## Tests
 ```bash
 python3 -m pip install pytest
-python3 -m pytest -q kit adapters
+python3 -m pytest -q kit adapter
 ```
 
 ## Limits (honest)
 - Tested mostly on Anthropic models (Claude Haiku / Sonnet / Opus 5.5); OpenAI and Google tiers in `ROUTING.md` are
   candidates, not yet measured.
-- Chat apps cannot be enforced (no hooks, no base URL).
+- Chat apps cannot be enforced (no hooks, no base URL): the rules are followed there, not enforced.
 - The test harness and raw runs are not published (they contain private material); `docs/RESULTS.md` has every number.
 
 License: MIT.

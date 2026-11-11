@@ -158,3 +158,22 @@ def test_hermes_copy(tmp_path):
     assert not (proj / "CLAUDE.md").exists()
     S.Setup(str(proj)).uninstall()
     assert not (home / "plugins/frugal-bridge").exists()
+
+
+def test_auto_detect(tmp_path, monkeypatch):
+    monkeypatch.setattr(S.shutil, "which", lambda b: "/usr/bin/" + b if b in ("claude", "codex") else None)
+    for e in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "GEMINI_CLI", "HERMES_HOME", "HERMES_AGENT"):
+        monkeypatch.delenv(e, raising=False)
+    found, proxy = S.detect(str(tmp_path))
+    assert found == ["claude-code"] and proxy == ["codex"]
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hh"))
+    found, _ = S.detect(str(tmp_path))
+    assert "hermes" in found
+
+
+def test_cli_hosts_none_is_rules_only(tmp_path, capsys):
+    rc = S.main(["setup.py", "install", str(tmp_path / "p"), "--hosts", "none"])
+    assert rc == 0
+    p = tmp_path / "p"
+    assert (p / "AGENTS.md").exists() and not (p / "CLAUDE.md").exists() and not (p / ".claude").exists()
+    assert "Enforcement on this machine" in capsys.readouterr().out

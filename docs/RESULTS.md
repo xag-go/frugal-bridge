@@ -740,3 +740,15 @@ used by the top-tier agent, together with grep (FC), not instead of it.
   is covered by `setup.py` tests with an isolated home.
 - Public repo cleaned by `public/scrub.py` (run by `publish.sh`): drops the discussion appendix, the real-setup
   evidence (E1/E2), the process index, plan-usage notes, account/credit lines; "user" → "user".
+
+### 2.25 One adapter for everything (2026-11-11)
+- User: nothing may suggest Frugal-Bridge works only with a few named tools. `adapters/claude-code|hermes|proxy` →
+  `adapter/` with three mechanisms named by what the tool allows: `hooks/`, `plugin/`, `proxy/`. Tool names appear only
+  as examples inside docs.
+- `setup.py --hosts auto` (default): detects agent tools (env vars, binaries, project folders) and installs the
+  strongest mechanism each allows; prints "Enforcement on this machine" (hooks / plugin copied, enable = user's yes /
+  proxy available for …). `--hosts none` = rules only. Tests 51/51 (+ detection, + rules-only CLI).
+- README leads with "any AI agent, app, or provider" and a table by kind of place (agent folder, hooks/plugins, base
+  URL, chat apps, own app); INSTALL.md no longer asks the agent which product it is — setup decides.
+- Real test: Claude Code (Sonnet 5.5) from one sentence, answers in French: auto-installed hooks, copied the plugin to
+  the (test) plugin home without enabling it, listed the proxy for Codex, check OK, $0.11, 5 turns.
